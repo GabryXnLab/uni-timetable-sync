@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.clasp.json
+.env*
+*.key
+*.pem
+client_secret.json
+*.tsbuildinfo
