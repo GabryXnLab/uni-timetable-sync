@@ -2,6 +2,8 @@ import { parseIcal, type Lesson } from './ical';
 
 const ZONE = 'Europe/Rome';
 const TAG = 'unifi_meccanica_uid';
+// Google Calendar permette di associare un'etichetta a ogni colore: tutte le lezioni usano "Mirtillo".
+const COLOR = String(CalendarApp.EventColor.BLUE);
 const SOURCE = 'https://kairos.unifi.it/agendaweb/export/ec_download_ical_list.php?view=easycourse&form-type=corso&include=corso&txtcurr=1+-+MECCANICO+FORMATIVO+A-D&anno=2026&scuola=ScuoladiIngegneria&corso=B309&anno2%5B%5D=F053_A-D%7C1&date=2026-09-16&periodo_didattico=&_lang=it&list=&week_grid_type=-1&ar_codes_=&ar_select_=&col_cells=0&empty_box=0&only_grid=0&highlighted_date=0&all_events=0&faculty_group=0';
 
 interface Week {
@@ -57,7 +59,8 @@ function eventChanged(event: GoogleAppsScript.Calendar.CalendarEvent, lesson: Le
     event.getStartTime().getTime() !== lesson.start.getTime() ||
     event.getEndTime().getTime() !== lesson.end.getTime() ||
     event.getDescription() !== lesson.description ||
-    event.getLocation() !== lesson.location;
+    event.getLocation() !== lesson.location ||
+    event.getColor() !== COLOR;
 }
 
 function describe(title: string, start: Date, end: Date, location: string): string {
@@ -103,6 +106,7 @@ function syncRange(week: Week, action: string) {
           event.setTime(lesson.start, lesson.end);
           event.setDescription(lesson.description);
           event.setLocation(lesson.location);
+          event.setColor(COLOR);
           changes.push('aggiornata: ' + describe(lesson.title, lesson.start, lesson.end, lesson.location));
           updated++;
         }
@@ -113,6 +117,7 @@ function syncRange(week: Week, action: string) {
           location: lesson.location,
         });
         added.setTag(TAG, lesson.uid);
+        added.setColor(COLOR);
         changes.push('nuova: ' + describe(lesson.title, lesson.start, lesson.end, lesson.location));
         created++;
       }
