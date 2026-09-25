@@ -27,6 +27,8 @@ pnpm build
 pnpm push
 ```
 
+Ogni push su `main` avvia il workflow GitHub Actions `Deploy Apps Script`: esegue type-check, test e build, carica il codice con clasp e ridistribuisce la Web App. Il workflow usa il secret `CLASPRC_JSON` con il contenuto di `~/.clasprc.json`; se il login clasp scade, rieseguire `clasp login` e aggiornarlo con `gh secret set CLASPRC_JSON < ~/.clasprc.json`. I trigger restano da installare una volta dall'editor.
+
 Lo sviluppo richiede Node.js 20+ e pnpm. Non serve alcun server locale durante l'esecuzione programmata.
 
 Il progetto Apps Script è già stato creato. In un nuovo checkout, collegarlo con `clasp clone 1lo63w_xdPURk9EHelDdd5UJdOsCvI9XPxwB3P1lV8et4z1DHqHSFnnAV --rootDir dist`, poi ricostruire con `pnpm build`. L'identificativo locale è in `.clasp.json` (ignorato da Git). Dopo il push, eseguire **una volta** `previewNextWeek` nell'editor Apps Script e autorizzare gli scope richiesti. Poi eseguire `installTriggers`; si può eseguire `syncNextWeek` per popolare subito la settimana seguente. Il trigger settimanale verrà eseguito la domenica tra le 18:00 e le 19:00; Apps Script non garantisce il minuto esatto.

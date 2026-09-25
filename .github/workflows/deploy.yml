@@ -1,0 +1,41 @@
+name: Deploy Apps Script
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  SCRIPT_ID: 1lo63w_xdPURk9EHelDdd5UJdOsCvI9XPxwB3P1lV8et4z1DHqHSFnnAV
+  # Deployment versionato (Web App): @HEAD segue già il codice caricato, questo va ridistribuito.
+  DEPLOYMENT_ID: AKfycbyWl9WZtevtcJOLogov7GMptJbaZPh3mORpD5a4fwQY34z1W9fhv2nPzLuE2Crv5Wxv
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm type-check
+      - run: pnpm test
+      - run: pnpm build
+      - name: Configura clasp
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+        run: |
+          test -n "$CLASPRC_JSON" || { echo "Secret CLASPRC_JSON mancante"; exit 1; }
+          printf '%s' "$CLASPRC_JSON" > ~/.clasprc.json
+          printf '{"scriptId":"%s","rootDir":"dist"}' "$SCRIPT_ID" > .clasp.json
+      - name: Push su Apps Script
+        run: pnpm dlx @google/clasp@3.3.0 push --force
+      - name: Ridistribuisci la Web App
+        run: pnpm dlx @google/clasp@3.3.0 create-deployment -i "$DEPLOYMENT_ID" -d "Deploy ${GITHUB_SHA::7}"

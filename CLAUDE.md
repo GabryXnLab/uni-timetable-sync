@@ -17,6 +17,7 @@ Calendar tramite trigger temporali. Uso personale.
 src/server/ical.ts    # parsing iCalendar Kairos → Lesson (puro, testato)
 src/server/index.ts   # fetch, sincronizzazione Calendar, trigger, funzioni esposte
 src/client/           # pannello React opzionale (Web App)
+.github/workflows/    # deploy automatico su push a main
 scripts/build.mjs     # build in dist/ + wrapper globali per Apps Script
 tests/                # test vitest del parser
 dist/                 # output caricato con clasp (ignorato da Git)
@@ -28,8 +29,12 @@ dist/                 # output caricato con clasp (ignorato da Git)
 pnpm type-check
 pnpm test
 pnpm build
-pnpm push    # build + clasp push sul progetto Apps Script
+pnpm push    # build + clasp push sul progetto Apps Script (deploy manuale)
 ```
+
+Ogni push su `main` esegue `.github/workflows/deploy.yml`: type-check, test, build, `clasp push`
+e ridistribuzione del deployment versionato. Le credenziali clasp sono nel secret
+`CLASPRC_JSON` (contenuto di `~/.clasprc.json`); se il login clasp scade va reimpostato.
 
 ## Note architetturali importanti
 
