@@ -19,7 +19,7 @@ await buildServer({
   target: 'es2020',
 });
 
-const globals = ['doGet', 'previewNextWeek', 'syncNextWeek', 'installWeeklyTrigger', 'getStatus', 'verifySetup'];
+const globals = ['doGet', 'previewNextWeek', 'syncNextWeek', 'checkThisWeek', 'installTriggers', 'getStatus', 'verifySetup'];
 let code = readFileSync(resolve(dist, 'Code.gs'), 'utf8');
 code += '\n' + globals.map(name => `function ${name}() { return UnifiCalendar.${name}.apply(this, arguments); }`).join('\n') + '\n';
 writeFileSync(resolve(dist, 'Code.gs'), code);

@@ -12,7 +12,7 @@ interface GasRunner {
   withFailureHandler(callback: (error: Error) => void): GasRunner;
   previewNextWeek(): void;
   syncNextWeek(): void;
-  installWeeklyTrigger(): void;
+  installTriggers(): void;
   verifySetup(): void;
 }
 
@@ -27,7 +27,7 @@ function App() {
   const [preview, setPreview] = useState<Preview | null>(null);
   const [message, setMessage] = useState('');
 
-  function call<T>(method: 'previewNextWeek' | 'syncNextWeek' | 'installWeeklyTrigger' | 'verifySetup', done: (value: T) => void) {
+  function call<T>(method: 'previewNextWeek' | 'syncNextWeek' | 'installTriggers' | 'verifySetup', done: (value: T) => void) {
     setBusy(true);
     setMessage('');
     const run = window.google?.script.run;
@@ -42,7 +42,7 @@ function App() {
       <div className="actions">
         <button disabled={busy} onClick={() => call<Preview>('previewNextWeek', setPreview)}>Anteprima</button>
         <button disabled={busy} onClick={() => call<Sync>('syncNextWeek', result => setMessage(`Settimana ${result.week}: ${result.fetched} lezioni, ${result.created} create, ${result.updated} aggiornate, ${result.deleted} rimosse.`))}>Sincronizza ora</button>
-        <button disabled={busy} onClick={() => call<{ installed: boolean }>('installWeeklyTrigger', () => setMessage('Trigger domenicale installato alle 18:00 (Europe/Rome).'))}>Attiva domenica</button>
+        <button disabled={busy} onClick={() => call<{ installed: boolean }>('installTriggers', () => setMessage('Trigger installati: sincronizzazione la domenica alle 18:00 e controllo lunedì–sabato alle 7:00 (Europe/Rome).'))}>Attiva trigger</button>
         <button disabled={busy} onClick={() => call<Verification>('verifySetup', result => setMessage(result.success ? `Verifica riuscita: ${result.calendarLessons} lezioni nel calendario e ${result.triggerCount} trigger.` : `Verifica incompleta: ${result.sourceLessons} lezioni Kairos, ${result.calendarLessons} nel calendario, ${result.triggerCount} trigger. Mancanti: ${result.missing.join(', ') || 'nessuna'}; da aggiornare: ${result.outdated.join(', ') || 'nessuna'}; extra: ${result.extra.join(', ') || 'nessuna'}.`))}>Verifica</button>
       </div>
       {busy && <p role="status">Operazione in corso…</p>}

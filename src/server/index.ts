@@ -20,6 +20,14 @@ function nextWeek(now = new Date()): Week {
   return { start, end, label: Utilities.formatDate(start, ZONE, 'dd/MM/yyyy') + '–' + Utilities.formatDate(new Date(end.getTime() - 86400000), ZONE, 'dd/MM/yyyy') };
 }
 
+function restOfThisWeek(now = new Date()): Week {
+  const today = Utilities.formatDate(now, ZONE, 'yyyy-MM-dd');
+  const [year, month, day] = today.split('-').map(Number);
+  const start = new Date(year, month - 1, day);
+  const end = new Date(year, month - 1, day + (((8 - start.getDay()) % 7) || 7));
+  return { start, end, label: Utilities.formatDate(start, ZONE, 'dd/MM/yyyy') + '–' + Utilities.formatDate(new Date(end.getTime() - 86400000), ZONE, 'dd/MM/yyyy') };
+}
+
 function sourceUrl(date: Date): string {
   const chosen = Utilities.formatDate(date, ZONE, 'yyyy-MM-dd');
   return SOURCE.replace(/([?&]date=)[^&]*/, `$1${chosen}`);
@@ -52,6 +60,10 @@ function eventChanged(event: GoogleAppsScript.Calendar.CalendarEvent, lesson: Le
     event.getLocation() !== lesson.location;
 }
 
+function describe(title: string, start: Date, end: Date, location: string): string {
+  return `${title} ${Utilities.formatDate(start, ZONE, 'EEE dd/MM HH:mm')}–${Utilities.formatDate(end, ZONE, 'HH:mm')} ${location}`;
+}
+
 export function previewNextWeek() {
   const week = nextWeek();
   const lessons = fetchLessons(week);
@@ -70,16 +82,16 @@ export function previewNextWeek() {
   };
 }
 
-export function syncNextWeek() {
+function syncRange(week: Week, action: string) {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(30000)) throw new Error('Sincronizzazione già in corso');
   try {
-    const week = nextWeek();
     const lessons = fetchLessons(week);
     const target = calendar();
     const existing = target.getEvents(week.start, week.end).filter(event => !!event.getTag(TAG));
     const byUid = new Map<string, GoogleAppsScript.Calendar.CalendarEvent>();
     for (const event of existing) byUid.set(event.getTag(TAG), event);
+    const changes: string[] = [];
     let created = 0;
     let updated = 0;
     let deleted = 0;
@@ -91,6 +103,7 @@ export function syncNextWeek() {
           event.setTime(lesson.start, lesson.end);
           event.setDescription(lesson.description);
           event.setLocation(lesson.location);
+          changes.push('aggiornata: ' + describe(lesson.title, lesson.start, lesson.end, lesson.location));
           updated++;
         }
         byUid.delete(lesson.uid);
@@ -100,36 +113,57 @@ export function syncNextWeek() {
           location: lesson.location,
         });
         added.setTag(TAG, lesson.uid);
+        changes.push('nuova: ' + describe(lesson.title, lesson.start, lesson.end, lesson.location));
         created++;
       }
     }
     for (const obsolete of byUid.values()) {
+      changes.push('rimossa: ' + describe(obsolete.getTitle(), obsolete.getStartTime() as Date, obsolete.getEndTime() as Date, obsolete.getLocation()));
       obsolete.deleteEvent();
       deleted++;
     }
-    const result = { week: week.label, fetched: lessons.length, created, updated, deleted };
-    Logger.log(JSON.stringify({ action: 'syncNextWeek', ...result }));
+    const result = { week: week.label, fetched: lessons.length, created, updated, deleted, changes };
+    Logger.log(JSON.stringify({ action, ...result }));
     return result;
   } finally {
     lock.releaseLock();
   }
 }
 
-export function installWeeklyTrigger() {
+export function syncNextWeek() {
+  return syncRange(nextWeek(), 'syncNextWeek');
+}
+
+// Kairos cambia UID quando cambiano aula o orario: una variazione compare come coppia "rimossa" + "nuova".
+export function checkThisWeek() {
+  if (Utilities.formatDate(new Date(), ZONE, 'u') === '7') {
+    Logger.log(JSON.stringify({ action: 'checkThisWeek', skipped: 'domenica' }));
+    return { skipped: true };
+  }
+  return syncRange(restOfThisWeek(), 'checkThisWeek');
+}
+
+const HANDLERS = ['syncNextWeek', 'checkThisWeek'];
+
+export function installTriggers() {
   for (const trigger of ScriptApp.getProjectTriggers()) {
-    if (trigger.getHandlerFunction() === 'syncNextWeek') ScriptApp.deleteTrigger(trigger);
+    if (HANDLERS.includes(trigger.getHandlerFunction())) ScriptApp.deleteTrigger(trigger);
   }
   ScriptApp.newTrigger('syncNextWeek').timeBased()
     .onWeekDay(ScriptApp.WeekDay.SUNDAY).atHour(18).everyWeeks(1)
     .inTimezone(ZONE).create();
-  const result = { installed: true, day: 'Domenica', hour: '18:00–19:00', timeZone: ZONE };
-  Logger.log(JSON.stringify({ action: 'installWeeklyTrigger', ...result }));
+  // Apps Script non supporta i trigger giornalieri solo feriali: la domenica viene saltata in checkThisWeek.
+  ScriptApp.newTrigger('checkThisWeek').timeBased()
+    .everyDays(1).atHour(7).nearMinute(0)
+    .inTimezone(ZONE).create();
+  const result = { installed: true, weeklySync: 'Domenica 18:00–19:00', dailyCheck: 'Lunedì–sabato verso le 7:00', timeZone: ZONE };
+  Logger.log(JSON.stringify({ action: 'installTriggers', ...result }));
   return result;
 }
 
 export function getStatus() {
   const result = {
-    triggerInstalled: ScriptApp.getProjectTriggers().some(trigger => trigger.getHandlerFunction() === 'syncNextWeek'),
+    triggerInstalled: HANDLERS.every(handler => ScriptApp.getProjectTriggers().some(trigger => trigger.getHandlerFunction() === handler)),
     calendar: calendar().getName(),
     nextWeek: nextWeek().label,
   };
@@ -157,7 +191,8 @@ export function verifySetup() {
     else if (eventChanged(event, lesson)) outdated.push(lesson.title);
     byUid.delete(lesson.uid);
   }
-  const triggerCount = ScriptApp.getProjectTriggers().filter(trigger => trigger.getHandlerFunction() === 'syncNextWeek').length;
+  const handlers = ScriptApp.getProjectTriggers().map(trigger => trigger.getHandlerFunction());
+  const triggerCount = handlers.filter(handler => HANDLERS.includes(handler)).length;
   const result = {
     week: week.label,
     calendar: target.getName(),
@@ -168,7 +203,7 @@ export function verifySetup() {
     outdated,
     extra: [...byUid.values()].map(event => event.getTitle()),
     duplicateUids: duplicates,
-    success: triggerCount === 1 && missing.length === 0 && outdated.length === 0 && byUid.size === 0 && duplicates.length === 0,
+    success: HANDLERS.every(handler => handlers.filter(h => h === handler).length === 1) && missing.length === 0 && outdated.length === 0 && byUid.size === 0 && duplicates.length === 0,
   };
   Logger.log(JSON.stringify({ action: 'verifySetup', ...result }));
   return result;
