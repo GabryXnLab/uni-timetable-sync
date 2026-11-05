@@ -1,10 +1,26 @@
 import { parseIcal, type Lesson } from './ical';
 
-const ZONE = 'Europe/Rome';
-const TAG = 'unifi_meccanica_uid';
-// Google Calendar permette di associare un'etichetta a ogni colore: tutte le lezioni usano "Mirtillo".
-const COLOR = String(CalendarApp.EventColor.BLUE);
-const SOURCE = 'https://kairos.unifi.it/agendaweb/export/ec_download_ical_list.php?view=easycourse&form-type=corso&include=corso&txtcurr=1+-+MECCANICO+FORMATIVO+A-D&anno=2026&scuola=ScuoladiIngegneria&corso=B309&anno2%5B%5D=F053_A-D%7C1&date=2026-09-16&periodo_didattico=&_lang=it&list=&week_grid_type=-1&ar_codes_=&ar_select_=&col_cells=0&empty_box=0&only_grid=0&highlighted_date=0&all_events=0&faculty_group=0';
+// Il fuso si cambia in appsscript.json: i giorni sono calcolati con new Date(y, m, d), che usa il fuso dello script.
+const ZONE = Session.getScriptTimeZone();
+const TAG = 'uni_timetable_uid';
+
+function property(name: string): string {
+  return (PropertiesService.getScriptProperties().getProperty(name) || '').trim();
+}
+
+function sourceSetting(): string {
+  const url = property('ICAL_URL');
+  if (!/^https?:\/\//.test(url)) throw new Error('Imposta la proprietà dello script ICAL_URL con il link iCalendar del tuo orario');
+  return url;
+}
+
+// Google Calendar permette di associare un'etichetta a ogni colore: tutte le lezioni usano lo stesso.
+function color(): string {
+  const name = (property('EVENT_COLOR') || 'BLUE').toUpperCase();
+  const colors = CalendarApp.EventColor as unknown as Record<string, GoogleAppsScript.Calendar.EventColor>;
+  if (!(name in colors)) throw new Error(`EVENT_COLOR non valido: ${name}. Valori ammessi: ${Object.keys(colors).join(', ')}`);
+  return String(colors[name]);
+}
 
 interface Week {
   start: Date;
@@ -32,7 +48,8 @@ function restOfThisWeek(now = new Date()): Week {
 
 function sourceUrl(date: Date): string {
   const chosen = Utilities.formatDate(date, ZONE, 'yyyy-MM-dd');
-  return SOURCE.replace(/([?&]date=)[^&]*/, `$1${chosen}`);
+  // EasyCourse esporta solo il periodo attorno al parametro date: va spostato sulla settimana richiesta.
+  return sourceSetting().replace(/([?&]date=)[^&]*/, `$1${chosen}`);
 }
 
 function fetchLessons(week: Week): Lesson[] {
@@ -41,26 +58,26 @@ function fetchLessons(week: Week): Lesson[] {
     muteHttpExceptions: true,
     headers: { Accept: 'text/calendar' },
   });
-  if (response.getResponseCode() !== 200) throw new Error(`Kairos HTTP ${response.getResponseCode()}`);
+  if (response.getResponseCode() !== 200) throw new Error(`Fonte iCalendar HTTP ${response.getResponseCode()}`);
   const body = response.getContentText('UTF-8');
-  if (body.length > 2_000_000) throw new Error('Esportazione Kairos troppo grande');
+  if (body.length > 2_000_000) throw new Error('Esportazione iCalendar troppo grande');
   return parseIcal(body).filter(lesson => lesson.start >= week.start && lesson.start < week.end);
 }
 
 function calendar(): GoogleAppsScript.Calendar.Calendar {
-  const id = PropertiesService.getScriptProperties().getProperty('CALENDAR_ID');
+  const id = property('CALENDAR_ID');
   const chosen = id ? CalendarApp.getCalendarById(id) : CalendarApp.getDefaultCalendar();
   if (!chosen) throw new Error(`Calendario non trovato: ${id}`);
   return chosen;
 }
 
-function eventChanged(event: GoogleAppsScript.Calendar.CalendarEvent, lesson: Lesson): boolean {
+function eventChanged(event: GoogleAppsScript.Calendar.CalendarEvent, lesson: Lesson, eventColor: string): boolean {
   return event.getTitle() !== lesson.title ||
     event.getStartTime().getTime() !== lesson.start.getTime() ||
     event.getEndTime().getTime() !== lesson.end.getTime() ||
     event.getDescription() !== lesson.description ||
     event.getLocation() !== lesson.location ||
-    event.getColor() !== COLOR;
+    event.getColor() !== eventColor;
 }
 
 function describe(title: string, start: Date, end: Date, location: string): string {
@@ -91,6 +108,7 @@ function syncRange(week: Week, action: string) {
   try {
     const lessons = fetchLessons(week);
     const target = calendar();
+    const eventColor = color();
     const existing = target.getEvents(week.start, week.end).filter(event => !!event.getTag(TAG));
     const byUid = new Map<string, GoogleAppsScript.Calendar.CalendarEvent>();
     for (const event of existing) byUid.set(event.getTag(TAG), event);
@@ -101,12 +119,12 @@ function syncRange(week: Week, action: string) {
     for (const lesson of lessons) {
       const event = byUid.get(lesson.uid);
       if (event) {
-        if (eventChanged(event, lesson)) {
+        if (eventChanged(event, lesson, eventColor)) {
           event.setTitle(lesson.title);
           event.setTime(lesson.start, lesson.end);
           event.setDescription(lesson.description);
           event.setLocation(lesson.location);
-          event.setColor(COLOR);
+          event.setColor(eventColor);
           changes.push('aggiornata: ' + describe(lesson.title, lesson.start, lesson.end, lesson.location));
           updated++;
         }
@@ -117,7 +135,7 @@ function syncRange(week: Week, action: string) {
           location: lesson.location,
         });
         added.setTag(TAG, lesson.uid);
-        added.setColor(COLOR);
+        added.setColor(eventColor);
         changes.push('nuova: ' + describe(lesson.title, lesson.start, lesson.end, lesson.location));
         created++;
       }
@@ -139,7 +157,7 @@ export function syncNextWeek() {
   return syncRange(nextWeek(), 'syncNextWeek');
 }
 
-// Kairos cambia UID quando cambiano aula o orario: una variazione compare come coppia "rimossa" + "nuova".
+// EasyCourse cambia UID quando cambiano aula o orario: una variazione compare come coppia "rimossa" + "nuova".
 export function checkThisWeek() {
   if (Utilities.formatDate(new Date(), ZONE, 'u') === '7') {
     Logger.log(JSON.stringify({ action: 'checkThisWeek', skipped: 'domenica' }));
@@ -180,6 +198,7 @@ export function verifySetup() {
   const week = nextWeek();
   const lessons = fetchLessons(week);
   const target = calendar();
+  const eventColor = color();
   const managed = target.getEvents(week.start, week.end).filter(event => !!event.getTag(TAG));
   const byUid = new Map<string, GoogleAppsScript.Calendar.CalendarEvent>();
   const duplicates: string[] = [];
@@ -193,7 +212,7 @@ export function verifySetup() {
   for (const lesson of lessons) {
     const event = byUid.get(lesson.uid);
     if (!event) missing.push(lesson.title);
-    else if (eventChanged(event, lesson)) outdated.push(lesson.title);
+    else if (eventChanged(event, lesson, eventColor)) outdated.push(lesson.title);
     byUid.delete(lesson.uid);
   }
   const handlers = ScriptApp.getProjectTriggers().map(trigger => trigger.getHandlerFunction());
@@ -215,5 +234,5 @@ export function verifySetup() {
 }
 
 export function doGet() {
-  return HtmlService.createHtmlOutputFromFile('Dashboard').setTitle('Orario Meccanica UniFi');
+  return HtmlService.createHtmlOutputFromFile('Dashboard').setTitle('Orario universitario');
 }

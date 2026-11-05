@@ -14,14 +14,14 @@ await buildServer({
   outfile: resolve(dist, 'Code.gs'),
   bundle: true,
   format: 'iife',
-  globalName: 'UnifiCalendar',
+  globalName: 'TimetableSync',
   platform: 'neutral',
   target: 'es2020',
 });
 
 const globals = ['doGet', 'previewNextWeek', 'syncNextWeek', 'checkThisWeek', 'installTriggers', 'getStatus', 'verifySetup'];
 let code = readFileSync(resolve(dist, 'Code.gs'), 'utf8');
-code += '\n' + globals.map(name => `function ${name}() { return UnifiCalendar.${name}.apply(this, arguments); }`).join('\n') + '\n';
+code += '\n' + globals.map(name => `function ${name}() { return TimetableSync.${name}.apply(this, arguments); }`).join('\n') + '\n';
 writeFileSync(resolve(dist, 'Code.gs'), code);
 await buildClient({ configFile: resolve(root, 'vite.config.ts') });
 renameSync(resolve(dist, 'index.html'), resolve(dist, 'Dashboard.html'));
