@@ -37,13 +37,13 @@ function App() {
   }
 
   return <main>
-    <header><span>UNIFI · INGEGNERIA</span><h1>Orario Meccanica</h1><p>Primo anno · curriculum formativo A–D</p></header>
-    <section className="panel"><h2>Settimana prossima</h2><p>Gli orari sono letti da Kairos al momento della sincronizzazione.</p>
+    <header><span>ORARIO UNIVERSITARIO</span><h1>Lezioni in calendario</h1><p>Sincronizzazione automatica dell'orario iCalendar su Google Calendar</p></header>
+    <section className="panel"><h2>Settimana prossima</h2><p>Gli orari sono letti dalla fonte iCalendar configurata al momento della sincronizzazione.</p>
       <div className="actions">
         <button disabled={busy} onClick={() => call<Preview>('previewNextWeek', setPreview)}>Anteprima</button>
         <button disabled={busy} onClick={() => call<Sync>('syncNextWeek', result => setMessage(`Settimana ${result.week}: ${result.fetched} lezioni, ${result.created} create, ${result.updated} aggiornate, ${result.deleted} rimosse.`))}>Sincronizza ora</button>
-        <button disabled={busy} onClick={() => call<{ installed: boolean }>('installTriggers', () => setMessage('Trigger installati: sincronizzazione la domenica alle 18:00 e controllo lunedì–sabato alle 7:00 (Europe/Rome).'))}>Attiva trigger</button>
-        <button disabled={busy} onClick={() => call<Verification>('verifySetup', result => setMessage(result.success ? `Verifica riuscita: ${result.calendarLessons} lezioni nel calendario e ${result.triggerCount} trigger.` : `Verifica incompleta: ${result.sourceLessons} lezioni Kairos, ${result.calendarLessons} nel calendario, ${result.triggerCount} trigger. Mancanti: ${result.missing.join(', ') || 'nessuna'}; da aggiornare: ${result.outdated.join(', ') || 'nessuna'}; extra: ${result.extra.join(', ') || 'nessuna'}.`))}>Verifica</button>
+        <button disabled={busy} onClick={() => call<{ installed: boolean }>('installTriggers', () => setMessage('Trigger installati: sincronizzazione la domenica alle 18:00 e controllo lunedì–sabato alle 7:00.'))}>Attiva trigger</button>
+        <button disabled={busy} onClick={() => call<Verification>('verifySetup', result => setMessage(result.success ? `Verifica riuscita: ${result.calendarLessons} lezioni nel calendario e ${result.triggerCount} trigger.` : `Verifica incompleta: ${result.sourceLessons} lezioni nella fonte, ${result.calendarLessons} nel calendario, ${result.triggerCount} trigger. Mancanti: ${result.missing.join(', ') || 'nessuna'}; da aggiornare: ${result.outdated.join(', ') || 'nessuna'}; extra: ${result.extra.join(', ') || 'nessuna'}.`))}>Verifica</button>
       </div>
       {busy && <p role="status">Operazione in corso…</p>}
       {message && <p role="status" className="notice">{message}</p>}
@@ -51,7 +51,6 @@ function App() {
     {preview && <section className="panel"><h2>{preview.week} · {preview.count} lezioni</h2>
       {preview.lessons.length ? <ul>{preview.lessons.map(lesson => <li key={lesson.uid}><strong>{lesson.title}</strong><span>{lesson.start}–{lesson.end}</span><small>{lesson.location}</small></li>)}</ul> : <p>Nessuna lezione prevista.</p>}
     </section>}
-    <footer>Fonte: <a href="https://kairos.unifi.it/agendaweb/" target="_blank" rel="noreferrer">Kairos UniFi</a></footer>
   </main>;
 }
 
