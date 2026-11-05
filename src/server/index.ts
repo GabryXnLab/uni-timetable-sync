@@ -168,18 +168,28 @@ export function checkThisWeek() {
 
 const HANDLERS = ['syncNextWeek', 'checkThisWeek'];
 
+function hour(name: string, fallback: number): number {
+  const raw = property(name);
+  if (!raw) return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 0 || value > 23) throw new Error(`${name} non valido: ${raw}. Usa un'ora intera da 0 a 23`);
+  return value;
+}
+
 export function installTriggers() {
+  const syncHour = hour('SYNC_HOUR', 18);
+  const checkHour = hour('CHECK_HOUR', 7);
   for (const trigger of ScriptApp.getProjectTriggers()) {
     if (HANDLERS.includes(trigger.getHandlerFunction())) ScriptApp.deleteTrigger(trigger);
   }
   ScriptApp.newTrigger('syncNextWeek').timeBased()
-    .onWeekDay(ScriptApp.WeekDay.SUNDAY).atHour(18).everyWeeks(1)
+    .onWeekDay(ScriptApp.WeekDay.SUNDAY).atHour(syncHour).everyWeeks(1)
     .inTimezone(ZONE).create();
   // Apps Script non supporta i trigger giornalieri solo feriali: la domenica viene saltata in checkThisWeek.
   ScriptApp.newTrigger('checkThisWeek').timeBased()
-    .everyDays(1).atHour(7).nearMinute(0)
+    .everyDays(1).atHour(checkHour).nearMinute(0)
     .inTimezone(ZONE).create();
-  const result = { installed: true, weeklySync: 'Domenica 18:00–19:00', dailyCheck: 'Lunedì–sabato verso le 7:00', timeZone: ZONE };
+  const result = { installed: true, weeklySync: `Domenica ${syncHour}:00–${syncHour + 1}:00`, dailyCheck: `Lunedì–sabato verso le ${checkHour}:00`, timeZone: ZONE };
   Logger.log(JSON.stringify({ action: 'installTriggers', ...result }));
   return result;
 }

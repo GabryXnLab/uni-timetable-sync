@@ -42,7 +42,7 @@ function App() {
       <div className="actions">
         <button disabled={busy} onClick={() => call<Preview>('previewNextWeek', setPreview)}>Anteprima</button>
         <button disabled={busy} onClick={() => call<Sync>('syncNextWeek', result => setMessage(`Settimana ${result.week}: ${result.fetched} lezioni, ${result.created} create, ${result.updated} aggiornate, ${result.deleted} rimosse.`))}>Sincronizza ora</button>
-        <button disabled={busy} onClick={() => call<{ installed: boolean }>('installTriggers', () => setMessage('Trigger installati: sincronizzazione la domenica alle 18:00 e controllo lunedì–sabato alle 7:00.'))}>Attiva trigger</button>
+        <button disabled={busy} onClick={() => call<{ weeklySync: string; dailyCheck: string }>('installTriggers', result => setMessage(`Trigger installati: sincronizzazione ${result.weeklySync}, controllo ${result.dailyCheck}.`))}>Attiva trigger</button>
         <button disabled={busy} onClick={() => call<Verification>('verifySetup', result => setMessage(result.success ? `Verifica riuscita: ${result.calendarLessons} lezioni nel calendario e ${result.triggerCount} trigger.` : `Verifica incompleta: ${result.sourceLessons} lezioni nella fonte, ${result.calendarLessons} nel calendario, ${result.triggerCount} trigger. Mancanti: ${result.missing.join(', ') || 'nessuna'}; da aggiornare: ${result.outdated.join(', ') || 'nessuna'}; extra: ${result.extra.join(', ') || 'nessuna'}.`))}>Verifica</button>
       </div>
       {busy && <p role="status">Operazione in corso…</p>}

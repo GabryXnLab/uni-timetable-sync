@@ -43,7 +43,7 @@ ridistribuzione della Web App. Credenziali clasp nel secret `CLASPRC_JSON`.
   esportata da `src/server/index.ts` **e** aggiunta all'elenco `globals` in `scripts/build.mjs`.
 - Repo pubblico: niente ID di script/deployment, URL di corsi, nomi di docenti o aule reali nel
   codice, nei test o nella documentazione. La configurazione è nelle proprietà dello script
-  (`ICAL_URL`, `CALENDAR_ID`, `EVENT_COLOR`), gli ID di deploy in `vars` del repo.
+  (`ICAL_URL`, `CALENDAR_ID`, `EVENT_COLOR`, `SYNC_HOUR`, `CHECK_HOUR`), gli ID di deploy in `vars` del repo.
 - Gli eventi gestiti sono riconosciuti solo dal tag privato `uni_timetable_uid`: la
   sincronizzazione non tocca mai eventi senza quel tag. Cambiarne il nome abbandona gli eventi
   già creati dagli utenti.

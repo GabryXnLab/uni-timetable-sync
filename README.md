@@ -43,14 +43,16 @@ Tutte le impostazioni sono proprietà dello script, quindi non serve toccare il 
 |---------------|--------------|-------------|
 | `ICAL_URL`    | sì           | Link iCalendar dell'orario. |
 | `CALENDAR_ID` | no           | ID del calendario di destinazione (Impostazioni del calendario → Integra calendario). Se manca, usa il calendario principale. |
+| `SYNC_HOUR`   | no           | Ora (0–23) della sincronizzazione della domenica. Predefinita: `18`. |
+| `CHECK_HOUR`  | no           | Ora (0–23) del controllo dal lunedì al sabato. Predefinita: `7`. |
 | `EVENT_COLOR` | no           | Colore delle lezioni, uno dei nomi di [`CalendarApp.EventColor`](https://developers.google.com/apps-script/reference/calendar/event-color) (`BLUE`, `PALE_RED`, `GREEN`…). Predefinito: `BLUE`, cioè "Mirtillo". |
 
-Tutte le lezioni hanno lo stesso colore. Nel calendario web puoi dare a quel colore un'etichetta, per esempio "Università" (menu colore di un evento → modifica etichetta).
+Dopo aver cambiato `SYNC_HOUR` o `CHECK_HOUR`, riesegui `installTriggers`. Tutte le lezioni hanno lo stesso colore. Nel calendario web puoi dare a quel colore un'etichetta, per esempio "Università" (menu colore di un evento → modifica etichetta).
 
 ## Come funziona
 
-- **Domenica tra le 18 e le 19** `syncNextWeek` sincronizza la settimana da lunedì a domenica.
-- **Dal lunedì al sabato verso le 7** `checkThisWeek` ricontrolla le lezioni da oggi a domenica. Apps Script non garantisce il minuto esatto.
+- **Domenica tra le 18 e le 19** (o all'ora `SYNC_HOUR`) `syncNextWeek` sincronizza la settimana da lunedì a domenica.
+- **Dal lunedì al sabato verso le 7** (o all'ora `CHECK_HOUR`) `checkThisWeek` ricontrolla le lezioni da oggi a domenica. Apps Script non garantisce il minuto esatto.
 - Ogni evento creato porta un tag privato (`uni_timetable_uid`) con l'UID della fonte. La sincronizzazione crea, aggiorna e rimuove solo gli eventi con quel tag e non tocca mai il resto del calendario. Rieseguirla non crea duplicati.
 - EasyCourse mette orario e aula nell'UID. Se uno dei due cambia, nei log la variazione compare come coppia "rimossa" + "nuova".
 - Se il download o il formato del file falliscono, la sincronizzazione si ferma senza cancellare nulla.
@@ -87,7 +89,6 @@ Se il login clasp scade, ripeti `clasp login` e aggiorna il secret.
 ## Limiti noti
 
 - Gli orari con `TZID` sono letti nel fuso dello script; quelli in UTC (`Z`) sono convertiti correttamente.
-- Gli orari dei trigger sono fissi in `installTriggers`.
 
 ## Licenza
 
