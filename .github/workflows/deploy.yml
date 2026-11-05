@@ -3,19 +3,20 @@ name: Deploy Apps Script
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 concurrency:
-  group: deploy
+  group: deploy-${{ github.ref }}
   cancel-in-progress: false
 
 env:
-  SCRIPT_ID: 1lo63w_xdPURk9EHelDdd5UJdOsCvI9XPxwB3P1lV8et4z1DHqHSFnnAV
+  SCRIPT_ID: ${{ vars.SCRIPT_ID }}
   # Deployment versionato (Web App): @HEAD segue già il codice caricato, questo va ridistribuito.
-  DEPLOYMENT_ID: AKfycbyWl9WZtevtcJOLogov7GMptJbaZPh3mORpD5a4fwQY34z1W9fhv2nPzLuE2Crv5Wxv
+  DEPLOYMENT_ID: ${{ vars.DEPLOYMENT_ID }}
 
 jobs:
-  deploy:
+  check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,6 +28,20 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm type-check
       - run: pnpm test
+
+  deploy:
+    needs: check
+    # Sulle pull request e nei fork senza la variabile SCRIPT_ID si eseguono solo i controlli.
+    if: github.event_name != 'pull_request' && vars.SCRIPT_ID != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - name: Configura clasp
         env:
@@ -38,4 +53,5 @@ jobs:
       - name: Push su Apps Script
         run: pnpm dlx @google/clasp@3.3.0 push --force
       - name: Ridistribuisci la Web App
+        if: env.DEPLOYMENT_ID != ''
         run: pnpm dlx @google/clasp@3.3.0 create-deployment -i "$DEPLOYMENT_ID" -d "Deploy ${GITHUB_SHA::7}"
