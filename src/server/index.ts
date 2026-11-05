@@ -243,6 +243,33 @@ export function verifySetup() {
   return result;
 }
 
+// Temporanea: porta al tag attuale gli eventi creati prima della rinomina del progetto. Da togliere dopo l'uso.
+const LEGACY_TAG = 'unifi_meccanica_uid';
+
+export function migrateLegacyEvents() {
+  const target = calendar();
+  const now = Date.now();
+  const events = target.getEvents(new Date(now - 400 * 86400000), new Date(now + 400 * 86400000));
+  const current = new Set(events.map(event => event.getTag(TAG)).filter(Boolean));
+  let retagged = 0;
+  let deleted = 0;
+  for (const event of events) {
+    const uid = event.getTag(LEGACY_TAG);
+    if (!uid) continue;
+    if (current.has(uid)) {
+      event.deleteEvent();
+      deleted++;
+    } else {
+      event.setTag(TAG, uid);
+      event.deleteTag(LEGACY_TAG);
+      retagged++;
+    }
+  }
+  const result = { calendar: target.getName(), retagged, deleted };
+  Logger.log(JSON.stringify({ action: 'migrateLegacyEvents', ...result }));
+  return result;
+}
+
 export function doGet() {
   return HtmlService.createHtmlOutputFromFile('Dashboard').setTitle('Orario universitario');
 }
