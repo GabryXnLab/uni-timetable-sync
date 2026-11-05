@@ -11,11 +11,31 @@ function unescapeIcal(value: string): string {
   return value.replace(/\\[nN]/g, '\n').replace(/\\([,;\\])/g, '$1');
 }
 
-function localDate(raw: string): Date | null {
-  const match = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})?$/.exec(raw);
+// Gli orari senza "Z" sono interpretati nel fuso dello script; gli eventi di giornata intera (solo data) non sono lezioni.
+function parseDate(raw: string): Date | null {
+  const match = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})?(Z?)$/.exec(raw);
   if (!match) return null;
-  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), Number(match[4]), Number(match[5]), Number(match[6] || 0));
+  const parts = [Number(match[1]), Number(match[2]) - 1, Number(match[3]), Number(match[4]), Number(match[5]), Number(match[6] || 0)] as const;
+  const date = match[7] ? new Date(Date.UTC(...parts)) : new Date(...parts);
   return Number.isNaN(date.getTime()) ? null : date;
+}
+
+// Formato EasyCourse (Kairos e altri atenei): "MATERIA (Cognomi A-D) - CODICE DOCENTE Aula X [Edificio] Tipo".
+function easyCourseLesson(summary: string): Pick<Lesson, 'title' | 'location' | 'description'> | null {
+  const match = /^(.+?) - ([A-Z][A-Z0-9]{3,})\s+(.+)$/.exec(summary);
+  if (!match) return null;
+  const room = /\b(Aula\s+[^\[]+\[[^\]]+\])/.exec(match[3]);
+  const location = room ? room[1].trim() : '';
+  const teacher = room ? match[3].slice(0, room.index).trim() : match[3].replace(/\s+Lezione$/, '').trim();
+  const kind = room ? match[3].slice(room.index + room[0].length).trim() : '';
+  const description = [
+    `Insegnamento: ${match[1]}`,
+    `Codice: ${match[2]}`,
+    teacher ? `Docente: ${teacher}` : '',
+    location ? `Aula: ${location}` : '',
+    kind ? `Tipo: ${kind}` : '',
+  ].filter(Boolean).join('\n');
+  return { title: match[1].replace(/\s*\(Cognomi\s+[^)]*\)\s*$/i, '').trim(), location, description };
 }
 
 export function parseIcal(source: string): Lesson[] {
@@ -32,31 +52,20 @@ export function parseIcal(source: string): Lesson[] {
     if (line === 'BEGIN:VEVENT') { fields = {}; continue; }
     if (line === 'END:VEVENT') {
       if (fields) {
-        const summary = unescapeIcal(fields.SUMMARY || '');
-        const start = localDate(fields.DTSTART || '');
-        const end = localDate(fields.DTEND || '');
+        const summary = unescapeIcal(fields.SUMMARY || '').trim();
+        const start = parseDate(fields.DTSTART || '');
+        const end = parseDate(fields.DTEND || '');
         const uid = fields.UID || '';
-        // Le festività e le sospensioni sono eventi di giornata intera, non lezioni.
-        const match = /^(.+?) - ([A-Z][A-Z0-9]{3,})\s+(.+)$/.exec(summary);
-        if (match && start && end && end > start && uid) {
-          const subject = match[1].replace(/\s*\(Cognomi\s+A\s*-\s*D\)\s*$/i, '').trim();
-          const room = /\b(Aula\s+[^\[]+\[[^\]]+\])/.exec(match[3]);
-          const location = room ? room[1].trim() : '';
-          const teacher = room ? match[3].slice(0, room.index).trim() : match[3].replace(/\s+Lezione$/, '').trim();
-          const kind = room ? match[3].slice(room.index + room[0].length).trim() : '';
-          const detail = [
-            `Insegnamento: ${match[1]}`,
-            `Codice: ${match[2]}`,
-            teacher ? `Docente: ${teacher}` : '',
-            location ? `Aula: ${location}` : '',
-            kind ? `Tipo: ${kind}` : '',
-            fields.DESCRIPTION ? `Note: ${unescapeIcal(fields.DESCRIPTION)}` : '',
-            `Dettagli Kairos: ${summary}`,
-            `Fonte: https://kairos.unifi.it/agendaweb/`,
-          ].filter(Boolean).join('\n');
-          lessons.push({ uid, title: subject, start, end, description: detail, location });
-        } else if (start && end && end > start && !fields.DTEND?.endsWith('T240000')) {
-          throw new Error(`Evento Kairos non riconosciuto: ${summary.slice(0, 100)}`);
+        const notes = unescapeIcal(fields.DESCRIPTION || '').trim();
+        // EasyCourse esporta festività e sospensioni come eventi 00:00–24:00.
+        if (summary && start && end && end > start && uid && !fields.DTEND?.endsWith('T240000')) {
+          const parsed = easyCourseLesson(summary);
+          if (parsed) {
+            const description = [parsed.description, notes ? `Note: ${notes}` : '', `Dettagli originali: ${summary}`].filter(Boolean).join('\n');
+            lessons.push({ uid, start, end, ...parsed, location: parsed.location || unescapeIcal(fields.LOCATION || '').trim(), description });
+          } else {
+            lessons.push({ uid, start, end, title: summary, location: unescapeIcal(fields.LOCATION || '').trim(), description: notes });
+          }
         }
       }
       fields = null;
