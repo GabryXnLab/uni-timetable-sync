@@ -1,48 +1,94 @@
-# Orario Meccanica UniFi → Google Calendar
+# Orario universitario → Google Calendar
 
-Progetto Apps Script autonomo: [apri nell'editor Google](https://script.google.com/d/1lo63w_xdPURk9EHelDdd5UJdOsCvI9XPxwB3P1lV8et4z1DHqHSFnnAV/edit). Ogni domenica verso le 18:00 (fuso `Europe/Rome`) legge l'esportazione iCalendar pubblica di Kairos per **1° anno, Meccanico Formativo A–D (2026)** e sincronizza le lezioni della settimana da lunedì a domenica successiva.
+Script Google Apps Script che legge l'orario delle lezioni da un link iCalendar (`.ics`) e lo tiene sincronizzato su Google Calendar. Ogni domenica sera carica le lezioni della settimana seguente; dal lunedì al sabato, la mattina, ricontrolla i giorni che mancano e applica cambi di aula, di orario e lezioni annullate.
 
-## Verifica della fonte
+Funziona con:
 
-Il 16 settembre 2026 l'URL fornito ha risposto HTTP 200 senza autenticazione. Il sito espone `export/ec_download_ical_list.php`, che ha restituito `text/calendar; charset=utf-8` con 276 eventi, di cui 254 lezioni riconosciute. La settimana 21–27 settembre 2026 contiene 9 lezioni. L'esportazione comprende più settimane: il codice seleziona solo la settimana interessata. Non è stato rilevato CAPTCHA o login in questa prova. Un fetch effettivo dall'infrastruttura Apps Script richiede una prima esecuzione autorizzata sul progetto Google; `clasp run` con le credenziali CLI correnti segnala permessi insufficienti per l'esecuzione remota.
+- **EasyCourse / EasyAcademy** (per esempio Kairos di UniFi e gli altri atenei che usano l'agenda web EasyCourse). Dal riepilogo dell'evento ricava materia, codice, docente, aula e tipo di attività. Nel titolo resta solo la materia; la partizione per cognome (es. "(Cognomi A-D)") finisce nella descrizione.
+- **Qualsiasi altro calendario iCalendar**, usando direttamente titolo, luogo e descrizione dell'evento.
 
-Le righe iCalendar includono materia, docenti e aula nel campo `SUMMARY`; i giorni festivi sono esclusi. Kairos non fornisce campi `LOCATION` o `DESCRIPTION` per queste lezioni: l'automazione ricava aula e altri dettagli dal riepilogo. Il titolo nel calendario contiene solo la materia; la dicitura “(Cognomi A-D)” resta nella descrizione originale.
+Gira tutto su Apps Script, nel tuo account Google: non serve un server.
 
-Nessuna materia è configurata nel codice: ogni esecuzione usa le lezioni presenti nell'esportazione in quel momento. L'URL fissa solo il corso di studio, il curriculum, l'anno accademico e la data della settimana. Se una materia compare o scompare, la sincronizzazione crea o rimuove i relativi eventi della settimana interessata.
+## Di cosa hai bisogno
 
-## Struttura
+- Un account Google.
+- Node.js 20+ e pnpm (`corepack enable`).
+- Il link iCalendar del tuo orario. Su EasyCourse/Kairos: apri l'orario delle lezioni, scegli corso, anno e curriculum e usa l'esportazione iCal. Copia il link del file, che contiene `ec_download_ical_list.php`. Il parametro `date=` del link viene aggiornato in automatico per ogni settimana.
 
-- `src/server/` — parsing iCalendar, fetch, sincronizzazione e trigger Apps Script.
-- `src/client/` — pannello React per anteprima, sincronizzazione manuale e attivazione trigger.
-- `scripts/build.mjs` — esbuild per `Code.gs`, Vite per `Dashboard.html`.
-- `dist/` — soli file caricati con clasp.
+## Installazione
 
-## Uso
+1. Abilita l'API Apps Script su <https://script.google.com/home/usersettings>.
+2. Clona il repo e installa le dipendenze:
+
+   ```bash
+   pnpm install
+   pnpm dlx @google/clasp@3.3.0 login
+   pnpm dlx @google/clasp@3.3.0 create-script --type standalone --title "Orario universitario" --rootDir dist
+   pnpm build && pnpm dlx @google/clasp@3.3.0 push --force
+   ```
+
+   `create-script` crea il progetto nel tuo account e salva il suo ID in `.clasp.json`, che Git ignora.
+3. Apri il progetto (`pnpm dlx @google/clasp@3.3.0 open-script`). In **Impostazioni progetto → Proprietà dello script** aggiungi almeno `ICAL_URL` (vedi [Configurazione](#configurazione)).
+4. Nell'editor esegui **una volta** `previewNextWeek` e autorizza gli accessi richiesti. Nei log trovi le lezioni della settimana prossima.
+5. Esegui `installTriggers` per attivare la sincronizzazione automatica. Se vuoi popolare subito il calendario, esegui anche `syncNextWeek`.
+6. Esegui `verifySetup`: `success: true` vuol dire che il calendario coincide con la fonte e che i trigger sono installati.
+
+Il fuso orario è `Europe/Rome`. Se ti serve un fuso diverso, cambia `timeZone` in `appsscript.json` prima del push.
+
+## Configurazione
+
+Tutte le impostazioni sono proprietà dello script, quindi non serve toccare il codice:
+
+| Proprietà     | Obbligatoria | Significato |
+|---------------|--------------|-------------|
+| `ICAL_URL`    | sì           | Link iCalendar dell'orario. |
+| `CALENDAR_ID` | no           | ID del calendario di destinazione (Impostazioni del calendario → Integra calendario). Se manca, usa il calendario principale. |
+| `EVENT_COLOR` | no           | Colore delle lezioni, uno dei nomi di [`CalendarApp.EventColor`](https://developers.google.com/apps-script/reference/calendar/event-color) (`BLUE`, `PALE_RED`, `GREEN`…). Predefinito: `BLUE`, cioè "Mirtillo". |
+
+Tutte le lezioni hanno lo stesso colore. Nel calendario web puoi dare a quel colore un'etichetta, per esempio "Università" (menu colore di un evento → modifica etichetta).
+
+## Come funziona
+
+- **Domenica tra le 18 e le 19** `syncNextWeek` sincronizza la settimana da lunedì a domenica.
+- **Dal lunedì al sabato verso le 7** `checkThisWeek` ricontrolla le lezioni da oggi a domenica. Apps Script non garantisce il minuto esatto.
+- Ogni evento creato porta un tag privato (`uni_timetable_uid`) con l'UID della fonte. La sincronizzazione crea, aggiorna e rimuove solo gli eventi con quel tag e non tocca mai il resto del calendario. Rieseguirla non crea duplicati.
+- EasyCourse mette orario e aula nell'UID. Se uno dei due cambia, nei log la variazione compare come coppia "rimossa" + "nuova".
+- Se il download o il formato del file falliscono, la sincronizzazione si ferma senza cancellare nulla.
+- Non vengono importati gli eventi di giornata intera né le festività EasyCourse (00:00–24:00).
+
+Il pannello web (`doGet`) è facoltativo. Per usarlo crea una distribuzione **App web** dall'editor: offre anteprima, sincronizzazione manuale, installazione dei trigger e verifica.
+
+## Sviluppo
 
 ```bash
-pnpm install
 pnpm type-check
 pnpm test
-pnpm build
-pnpm push
+pnpm build      # dist/Code.gs + dist/Dashboard.html
+pnpm push       # build + clasp push (richiede clasp installato e .clasp.json)
 ```
 
-Ogni push su `main` avvia il workflow GitHub Actions `Deploy Apps Script`: esegue type-check, test e build, carica il codice con clasp e ridistribuisce la Web App. Il workflow usa il secret `CLASPRC_JSON` con il contenuto di `~/.clasprc.json`; se il login clasp scade, rieseguire `clasp login` e aggiornarlo con `gh secret set CLASPRC_JSON < ~/.clasprc.json`. I trigger restano da installare una volta dall'editor.
+- `src/server/ical.ts`: parsing iCalendar (puro, testato in `tests/`).
+- `src/server/index.ts`: fetch, sincronizzazione, trigger e funzioni esposte.
+- `src/client/`: pannello React.
+- `scripts/build.mjs`: bundle per Apps Script.
 
-Lo sviluppo richiede Node.js 20+ e pnpm. Non serve alcun server locale durante l'esecuzione programmata.
+### Deploy automatico (facoltativo)
 
-Il progetto Apps Script è già stato creato. In un nuovo checkout, collegarlo con `clasp clone 1lo63w_xdPURk9EHelDdd5UJdOsCvI9XPxwB3P1lV8et4z1DHqHSFnnAV --rootDir dist`, poi ricostruire con `pnpm build`. L'identificativo locale è in `.clasp.json` (ignorato da Git). Dopo il push, eseguire **una volta** `previewNextWeek` nell'editor Apps Script e autorizzare gli scope richiesti. Poi eseguire `installTriggers`; si può eseguire `syncNextWeek` per popolare subito la settimana seguente. Il trigger settimanale verrà eseguito la domenica tra le 18:00 e le 19:00; Apps Script non garantisce il minuto esatto.
+`.github/workflows/deploy.yml` esegue type-check e test a ogni push e pull request. Se la variabile del repo `SCRIPT_ID` è impostata, a ogni push su `main` carica anche il codice con clasp. Per attivarlo nel tuo fork:
 
-Dal lunedì al sabato, verso le 7:00 (±15 minuti), `checkThisWeek` riconfronta con Kairos le lezioni da oggi a domenica e corregge nel calendario materia, orario e aula. Kairos cambia UID quando cambiano aula o orario, quindi una variazione compare nei log come coppia “rimossa” + “nuova” con i relativi dettagli.
+```bash
+gh variable set SCRIPT_ID --body "<id dello script>"
+gh variable set DEPLOYMENT_ID --body "<id della distribuzione App web>"   # facoltativa
+gh secret set CLASPRC_JSON < ~/.clasprc.json
+```
 
-Tutti gli eventi creati dall'automazione hanno il colore “Mirtillo”. Nel calendario web si può dare a quel colore l'etichetta “Università” (menu colore di un evento → modifica etichetta): vale per tutte le lezioni. Gli eventi già esistenti vengono ricolorati alla successiva sincronizzazione o al controllo giornaliero successivo. Per usare un calendario diverso da quello principale, impostare la proprietà script `CALENDAR_ID` con l'ID del calendario desiderato.
+Se il login clasp scade, ripeti `clasp login` e aggiorna il secret.
 
-Per controllare l'esito, eseguire `verifySetup`: registra nei log la settimana, il calendario, i conteggi Kairos/Calendar, il numero di trigger ed eventuali lezioni mancanti, da aggiornare o extra. `success: true` indica che la settimana successiva coincide con Kairos e che esiste esattamente un trigger per `syncNextWeek` e uno per `checkThisWeek`. Dopo una modifica del formato dei titoli, eseguire nuovamente `syncNextWeek`: aggiorna anche gli eventi già presenti con lo stesso UID. Le funzioni di anteprima, installazione e sincronizzazione registrano ora un riepilogo nei log.
+## Limiti noti
 
-Il pannello React è opzionale: per aprirlo occorre creare una distribuzione **Web App** dall'editor Apps Script. Le funzioni e il trigger funzionano anche senza Web App.
+- Gli orari con `TZID` sono letti nel fuso dello script; quelli in UTC (`Z`) sono convertiti correttamente.
+- Gli orari dei trigger sono fissi in `installTriggers`.
 
-La funzione di sincronizzazione crea o aggiorna gli eventi usando un tag privato con l'UID Kairos. Rimuove dalla settimana interessata solo gli eventi che portano quel tag; gli altri eventi nel calendario non vengono toccati. La ripetizione è idempotente. Se il fetch o il formato iCalendar falliscono, la sincronizzazione si interrompe senza eliminare eventi.
+## Licenza
 
-## Manutenzione
-
-L'URL del corso e l'anno accademico sono nella costante `SOURCE` in `src/server/index.ts`. Va aggiornato all'anno successivo o se cambia il curriculum. Il formato iCalendar è controllato con test e deve essere riverificato se Kairos cambia esportazione. L'intero flusso di produzione gira su Apps Script; Node, Vite e React servono solo durante lo sviluppo e per il pannello HTML ospitato dallo stesso progetto Apps Script.
+[MIT](LICENSE)

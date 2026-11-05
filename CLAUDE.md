@@ -1,10 +1,11 @@
-# CLAUDE.md — UniFi Meccanica Calendar
+# CLAUDE.md — Uni Timetable Sync
 
 ## Cos'è
 
-Progetto Google Apps Script che legge l'esportazione iCalendar pubblica di Kairos (orario
-1° anno Ingegneria Meccanica UniFi, curriculum A–D) e sincronizza le lezioni su Google
-Calendar tramite trigger temporali. Uso personale.
+Progetto Google Apps Script open source (MIT) che legge un orario iCalendar (formato EasyCourse
+come Kairos UniFi, oppure qualsiasi `.ics`) e sincronizza le lezioni su Google Calendar tramite
+trigger temporali. Pensato per essere riusato da qualsiasi studente: nessun dato personale o di
+ateneo nel codice.
 
 ## Stack
 
@@ -14,7 +15,7 @@ Calendar tramite trigger temporali. Uso personale.
 ## Struttura
 
 ```
-src/server/ical.ts    # parsing iCalendar Kairos → Lesson (puro, testato)
+src/server/ical.ts    # parsing iCalendar (EasyCourse + generico) → Lesson (puro, testato)
 src/server/index.ts   # fetch, sincronizzazione Calendar, trigger, funzioni esposte
 src/client/           # pannello React opzionale (Web App)
 .github/workflows/    # deploy automatico su push a main
@@ -32,22 +33,27 @@ pnpm build
 pnpm push    # build + clasp push sul progetto Apps Script (deploy manuale)
 ```
 
-Ogni push su `main` esegue `.github/workflows/deploy.yml`: type-check, test, build, `clasp push`
-e ridistribuzione del deployment versionato. Le credenziali clasp sono nel secret
-`CLASPRC_JSON` (contenuto di `~/.clasprc.json`); se il login clasp scade va reimpostato.
+`.github/workflows/deploy.yml` esegue type-check e test su push e pull request; su `main`, se la
+variabile del repo `SCRIPT_ID` esiste, anche build, `clasp push` e (con `DEPLOYMENT_ID`)
+ridistribuzione della Web App. Credenziali clasp nel secret `CLASPRC_JSON`.
 
 ## Note architetturali importanti
 
 - Ogni funzione chiamabile da Apps Script (trigger, editor, `google.script.run`) deve essere
   esportata da `src/server/index.ts` **e** aggiunta all'elenco `globals` in `scripts/build.mjs`.
-- Gli eventi gestiti sono riconosciuti solo dal tag privato `unifi_meccanica_uid`: la
-  sincronizzazione non tocca mai eventi senza quel tag.
-- L'UID Kairos contiene orario di inizio e aula: se cambia l'aula o l'ora, l'UID cambia e
+- Repo pubblico: niente ID di script/deployment, URL di corsi, nomi di docenti o aule reali nel
+  codice, nei test o nella documentazione. La configurazione è nelle proprietà dello script
+  (`ICAL_URL`, `CALENDAR_ID`, `EVENT_COLOR`), gli ID di deploy in `vars` del repo.
+- Gli eventi gestiti sono riconosciuti solo dal tag privato `uni_timetable_uid`: la
+  sincronizzazione non tocca mai eventi senza quel tag. Cambiarne il nome abbandona gli eventi
+  già creati dagli utenti.
+- L'UID EasyCourse contiene orario di inizio e aula: se cambia l'aula o l'ora, l'UID cambia e
   l'evento viene rimosso e ricreato, non aggiornato.
 - I trigger vanno installati dall'editor Apps Script (`installTriggers`): `clasp run` con le
   credenziali CLI non ha i permessi di esecuzione remota. I trigger temporali non
   garantiscono il minuto esatto.
-- Il fuso `Europe/Rome` in `appsscript.json` è necessario: il calcolo dei giorni usa `new Date(y, m, d)`.
+- Il fuso viene da `appsscript.json` (`Session.getScriptTimeZone()`): il calcolo dei giorni usa
+  `new Date(y, m, d)`, quindi gli orari iCal senza `Z` sono letti in quel fuso.
 
 ## Convenzioni
 
